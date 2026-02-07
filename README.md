@@ -68,10 +68,10 @@
 *   **USB Debugging** enabled on your Android device.
 
 ### Installation
-1.  Clone the repository or download the source.
+1.  Clone the repository or download the exe.
 2.  Install dependencies:
     ```bash
-    pip install customtkinter
+    pip install -r requirements.txt
     ```
 3.  Run the application:
     ```bash
