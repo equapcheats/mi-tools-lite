@@ -5,6 +5,7 @@
 
 ## ✨ Features
 
+
 ### 🔌 Connection & Monitoring
 *   **One-Click Connection**: Automatically scans and connects to ADB devices.
 *   **Real-Time Monitor**: Live updates for:
@@ -13,12 +14,24 @@
     *   **CPU**: Core count and architecture.
 *   **Smart Polling**: Only updates stats when the relevant tab is active to save resources.
 
+<img
+  src="https://github.com/Tiegertropfen119-0001/mi-tools-lite/blob/main/gitimg/img0.png"
+  alt="img0"
+  height="480"
+/>
+
 ### 🗑️ Advanced Debloater
 *   **Safe Debloating**: Remove system apps for the current user (`--user 0`) without bricking the device.
 *   **Dual-Variant Intelligence**: Automatically detects and handles both **Old MIUI** (`com.miui.*`) and **New HyperOS** (`com.xiaomi.*`) package names.
 *   **Categorized Lists**: Pre-defined lists for Xiaomi, Google, Facebook, and Microsoft bloatware.
 *   **Multi-Select**: tick multiple apps or "Select All" to remove them in bulk.
 *   **Robust Restore**: Easily re-enable or re-install apps if you change your mind.
+
+<img
+  src="https://github.com/Tiegertropfen119-0001/mi-tools-lite/blob/main/gitimg/img1.png"
+  alt="img1"
+  height="480"
+/>
 
 ### 📦 Package Manager
 *   **Deep Filtering**: View apps by category:
