@@ -1,0 +1,50 @@
+name: Build and Release Executable
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --windowed mi_tools_lite.py
+
+      - name: Get tag name
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $env:GITHUB_ENV
+
+      - name: Create ZIP package
+        run: |
+          mkdir package
+          copy dist\mi_tools_lite.exe package\
+          copy AdbWinApi.dll package\
+          copy AdbWinUsbApi.dll package\
+          copy adb.exe package\
+          powershell Compress-Archive package mi_tools_lite-${{ env.TAG_NAME }}.zip
+
+      - name: Create Release and Upload ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: Release ${{ env.TAG_NAME }}
+          body: Automated release for version ${{ env.TAG_NAME }}
+          files: mi_tools_lite-${{ env.TAG_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
