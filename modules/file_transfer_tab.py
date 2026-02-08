@@ -1,8 +1,115 @@
-
 import customtkinter as ctk
 import threading
 import tkinter.filedialog
+import tkinter.messagebox
+import tkinter as tk
 import os
+import subprocess
+
+class FileRow(ctk.CTkFrame):
+    def __init__(self, master, item, selected=False, on_click=None, on_right_click=None, on_double_click=None):
+        super().__init__(master, fg_color="transparent", corner_radius=0)
+        self.item = item
+        self.selected = selected
+        self.on_click = on_click
+        self.on_right_click = on_right_click
+        self.on_double_click = on_double_click
+
+        # Layout
+        self.grid_columnconfigure(1, weight=1) # Name
+        self.grid_columnconfigure(2, weight=0) # Date
+        self.grid_columnconfigure(3, weight=0) # Size
+
+        # Checkbox (simulated with a label or button, or actual checkbox)
+        # Using a label for selection indicator is cleaner than a bulky checkbox sometimes, 
+        # but checkbox is better for multi-select usability.
+        self.checkbox = ctk.CTkCheckBox(self, text="", width=24, command=self._on_check_toggle)
+        self.checkbox.grid(row=0, column=0, padx=(5, 5), pady=2, sticky="w")
+        if selected:
+            self.checkbox.select()
+
+        # Icon
+        icon = "📁" if item['type'] == 'dir' else "📄"
+        self.lbl_icon = ctk.CTkLabel(self, text=icon, width=30, anchor="center")
+        self.lbl_icon.grid(row=0, column=0, padx=(30, 0), sticky="w") # Offset from checkbox
+
+        # Name
+        self.lbl_name = ctk.CTkLabel(self, text=item['name'], anchor="w")
+        self.lbl_name.grid(row=0, column=1, padx=5, sticky="ew")
+
+        # Date
+        self.lbl_date = ctk.CTkLabel(self, text=item.get('date', ''), width=120, anchor="e", text_color="gray")
+        self.lbl_date.grid(row=0, column=2, padx=5, sticky="e")
+
+        # Size
+        self.lbl_size = ctk.CTkLabel(self, text=item.get('size', ''), width=80, anchor="e", text_color="gray")
+        self.lbl_size.grid(row=0, column=3, padx=5, sticky="e")
+
+        # Bindings
+        for w in [self, self.lbl_icon, self.lbl_name, self.lbl_date, self.lbl_size]:
+            w.bind("<Button-1>", self._on_click_event)
+            w.bind("<Button-3>", self._on_right_click_event)
+            if self.item['type'] == 'dir':
+                w.bind("<Double-Button-1>", self._on_double_click_event)
+        
+        # Hover effect
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+    def _on_enter(self, event):
+        if not self.selected:
+            self.configure(fg_color=("gray85", "gray25"))
+
+    def _on_leave(self, event):
+        if not self.selected:
+            self.configure(fg_color="transparent")
+
+    def _on_check_toggle(self):
+        self.selected = bool(self.checkbox.get())
+        if self.on_click:
+            self.on_click(self.item, self.selected)
+        self.update_appearance()
+
+    def _on_click_event(self, event):
+        # Toggle selection on click, or single select? 
+        # Standard: Click selects (and deselects others usually), Ctrl+Click toggles.
+        # For simplicity: Click toggles this row's selection state physically, but 
+        # typically in file managers, single click selects only ONE.
+        # Let's implement: Click = select only this (deselect others). Ctrl+Click = toggle.
+        
+        # Checking for Ctrl key is hard in pure tkinter bind without event parsing.
+        # We'll just generic click -> inform parent.
+        state = 0
+        if isinstance(event.state, int): # Sometimes it's a string in some wrappers, but usually int
+             # 0x0004 is Control on Windows
+             if event.state & 0x0004:
+                 state = 1 # Ctrl
+             elif event.state & 0x0001:
+                 state = 2 # Shift (ignored for now)
+        
+        if self.on_click:
+             self.on_click(self.item, modifier=state)
+
+    def _on_right_click_event(self, event):
+        if self.on_right_click:
+            self.on_right_click(event, self.item)
+
+    def _on_double_click_event(self, event):
+        if self.on_double_click:
+            self.on_double_click(self.item)
+
+    def set_selected(self, selected):
+        self.selected = selected
+        if selected:
+            self.checkbox.select()
+            self.configure(fg_color=("gray75", "#3A3A4A"))
+        else:
+            self.checkbox.deselect()
+            self.configure(fg_color="transparent")
+    
+    def update_appearance(self):
+        self.set_selected(self.selected)
+
 
 class FileTransferTab(ctk.CTkFrame):
     def __init__(self, master, adb_manager):
@@ -10,65 +117,108 @@ class FileTransferTab(ctk.CTkFrame):
         self.adb_manager = adb_manager
         
         self.current_path = "/sdcard/"
-        self.file_list = []
+        self.file_items = [] # raw data
+        self.row_widgets = [] # FileRow instances
+        self.selected_items = set() # Set of names
         
-        # Grid layout
+        # Layout
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(2, weight=1) # List area grows
 
-        # 1. Header
-        self.header_frame = ctk.CTkFrame(self)
-        self.header_frame.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
+        # 1. Header & Navigation
+        self._setup_header()
+
+        # 2. Column Headers
+        self._setup_column_headers()
         
-        self.label_title = ctk.CTkLabel(self.header_frame, text="File Transfer", font=("Roboto Medium", 18))
-        self.label_title.pack(side="left", padx=10, pady=10)
-
-        # 2. Controls / Navbar
-        self.nav_frame = ctk.CTkFrame(self)
-        self.nav_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
-
-        self.btn_up = ctk.CTkButton(self.nav_frame, text="⬆ Up", width=50, command=self.go_up)
-        self.btn_up.pack(side="left", padx=5, pady=5)
+        # 3. File List
+        self.list_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.list_frame.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="nsew")
         
-        self.btn_refresh = ctk.CTkButton(self.nav_frame, text="↻", width=40, command=self.refresh_files)
-        self.btn_refresh.pack(side="left", padx=5, pady=5)
+        # 4. Footer / Actions
+        self._setup_footer()
 
-        self.entry_path = ctk.CTkEntry(self.nav_frame, placeholder_text="/path/to/dir")
-        self.entry_path.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        # Context Menu
+        self.context_menu = tk.Menu(self, tearoff=0)
+        self.context_menu.add_command(label="Open", command=self.on_open_context)
+        self.context_menu.add_command(label="Download", command=self.download_selected)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Rename", command=self.rename_selected)
+        self.context_menu.add_command(label="Delete", command=self.delete_selected)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Properties", command=self.show_properties)
+
+        self.last_right_clicked_item = None
+
+    def _setup_header(self):
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        
+        # Refresh
+        self.btn_refresh = ctk.CTkButton(header, text="↻", width=30, command=self.refresh_files)
+        self.btn_refresh.pack(side="left", padx=(0, 5))
+
+        # Up
+        self.btn_up = ctk.CTkButton(header, text="⬆", width=30, command=self.go_up)
+        self.btn_up.pack(side="left", padx=5)
+
+        # Home
+        self.btn_home = ctk.CTkButton(header, text="🏠", width=30, command=self.go_home)
+        self.btn_home.pack(side="left", padx=5)
+
+        # Path Entry
+        self.entry_path = ctk.CTkEntry(header, placeholder_text="/path/to/dir")
+        self.entry_path.pack(side="left", fill="x", expand=True, padx=10)
         self.entry_path.bind("<Return>", self.on_path_entry)
+        
+        # New Folder
+        self.btn_new_folder = ctk.CTkButton(header, text="+ Folder", width=80, command=self.create_folder, fg_color="#2aa198")
+        self.btn_new_folder.pack(side="right", padx=5)
 
-        self.btn_search = ctk.CTkButton(self.nav_frame, text="Search", width=80, command=self.toggle_search)
+        # Search
+        self.btn_search = ctk.CTkButton(header, text="Search", width=80, command=self.toggle_search)
         self.btn_search.pack(side="right", padx=5)
 
-        # 3. File List
-        self.list_frame = ctk.CTkScrollableFrame(self, label_text="Files")
-        self.list_frame.grid(row=2, column=0, padx=20, pady=5, sticky="nsew")
+    def _setup_column_headers(self):
+        cols = ctk.CTkFrame(self, height=30, fg_color=("gray90", "gray20"))
+        cols.grid(row=1, column=0, padx=10, pady=(0,0), sticky="ew")
+        cols.grid_columnconfigure(1, weight=1)
 
-        # 4. Actions
-        self.action_frame = ctk.CTkFrame(self)
-        self.action_frame.grid(row=3, column=0, padx=20, pady=20, sticky="ew")
+        # Select All Checkbox logic
+        self.chk_select_all = ctk.CTkCheckBox(cols, text="", width=24, command=self.toggle_select_all)
+        self.chk_select_all.grid(row=0, column=0, padx=(15, 5), pady=5, sticky="w") # Align with items
 
-        self.status_label = ctk.CTkLabel(self.action_frame, text="Ready", anchor="w")
-        self.status_label.pack(side="left", padx=10, fill="x", expand=True)
+        ctk.CTkLabel(cols, text="Name", anchor="w", font=("Roboto", 12, "bold")).grid(row=0, column=1, padx=35, sticky="ew")
+        ctk.CTkLabel(cols, text="Date", width=120, anchor="e", font=("Roboto", 12, "bold")).grid(row=0, column=2, padx=5, sticky="e")
+        ctk.CTkLabel(cols, text="Size", width=80, anchor="e", font=("Roboto", 12, "bold")).grid(row=0, column=3, padx=15, sticky="e")
 
-        self.btn_upload = ctk.CTkButton(self.action_frame, text="Upload File", command=self.upload_file)
-        self.btn_upload.pack(side="right", padx=5, pady=10)
+    def _setup_footer(self):
+        footer = ctk.CTkFrame(self, height=50)
+        footer.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
         
-        self.btn_rename = ctk.CTkButton(self.action_frame, text="Rename", state="disabled", command=self.rename_selected, fg_color="#E0A800", hover_color="#B08800")
-        self.btn_rename.pack(side="right", padx=5, pady=10)
+        self.lbl_status = ctk.CTkLabel(footer, text="Ready", anchor="w")
+        self.lbl_status.pack(side="left", padx=10, fill="x", expand=True)
+        
+        # Actions
+        self.btn_upload = ctk.CTkButton(footer, text="Upload", command=self.upload_file, width=80)
+        self.btn_upload.pack(side="right", padx=5, pady=5)
 
-        self.btn_delete = ctk.CTkButton(self.action_frame, text="Delete", state="disabled", command=self.delete_selected, fg_color="#D32F2F", hover_color="#B71C1C")
-        self.btn_delete.pack(side="right", padx=5, pady=10)
+        self.btn_download = ctk.CTkButton(footer, text="Download", command=self.download_selected, width=80)
+        self.btn_download.pack(side="right", padx=5, pady=5)
+        
+        self.btn_rename = ctk.CTkButton(footer, text="Rename", command=self.rename_selected, width=80, fg_color="#E0A800", hover_color="#B08800")
+        self.btn_rename.pack(side="right", padx=5, pady=5)
 
-        self.btn_download = ctk.CTkButton(self.action_frame, text="Download Selected", state="disabled", command=self.download_selected)
-        self.btn_download.pack(side="right", padx=5, pady=10)
+        self.btn_delete = ctk.CTkButton(footer, text="Delete", command=self.delete_selected, width=80, fg_color="#D32F2F", hover_color="#B71C1C")
+        self.btn_delete.pack(side="right", padx=5, pady=5)
 
-        # State
-        self.selected_item = None # {'name': '...', 'type': 'dir/file'}
-        self.item_widgets = {}
+    # --- Events ---
 
     def on_device_connected(self):
-        self.status_label.configure(text="Connected.")
+        self.refresh_files()
+
+    def go_home(self):
+        self.current_path = "/sdcard/"
         self.refresh_files()
 
     def go_up(self):
@@ -87,12 +237,19 @@ class FileTransferTab(ctk.CTkFrame):
 
     def refresh_files(self):
         if not self.adb_manager.connected_device:
-            self.status_label.configure(text="No device connected.")
+            self.lbl_status.configure(text="No device connected.")
             return
 
         self.entry_path.delete(0, 'end')
         self.entry_path.insert(0, self.current_path)
-        self.status_label.configure(text=f"Loading {self.current_path}...")
+        self.lbl_status.configure(text=f"Loading {self.current_path}...")
+        
+        # Clear list
+        for w in self.row_widgets:
+            w.destroy()
+        self.row_widgets = []
+        self.selected_items.clear()
+        self.chk_select_all.deselect()
 
         def _fetch():
             files = self.adb_manager.list_files(self.current_path)
@@ -101,212 +258,276 @@ class FileTransferTab(ctk.CTkFrame):
         threading.Thread(target=_fetch, daemon=True).start()
 
     def display_files(self, files):
-        self.file_list = files
-        for w in self.list_frame.winfo_children():
-            w.destroy()
+        self.file_items = files
         
-        self.item_widgets = {}
-        self.selected_item = None
-        self.btn_download.configure(state="disabled", text="Download / Open")
-        self.btn_delete.configure(state="disabled")
-        self.btn_rename.configure(state="disabled")
-
         if not files:
-            ctk.CTkLabel(self.list_frame, text="(Empty or Access Denied)").pack(pady=10)
-            self.status_label.configure(text="Ready.")
+            ctk.CTkLabel(self.list_frame, text="(Empty folder)").pack(pady=20)
+            self.lbl_status.configure(text=f"Loaded 0 items.")
             return
 
+        # Create rows
         for item in files:
-            f = ctk.CTkFrame(self.list_frame, fg_color="transparent")
-            f.pack(fill="x", padx=2, pady=1)
+            row = FileRow(
+                self.list_frame, 
+                item, 
+                selected=False,
+                on_click=self.on_row_click,
+                on_right_click=self.on_row_right_click,
+                on_double_click=self.on_row_double_click
+            )
+            row.pack(fill="x", pady=1)
+            self.row_widgets.append(row)
+        
+        self.lbl_status.configure(text=f"Loaded {len(files)} items.")
 
-            # Icon
-            icon = "📁" if item['type'] == 'dir' else "📄"
-            fg = "white" if item['type'] == 'file' else "#3B8ED0"
+    # --- Interaction ---
+
+    def on_row_click(self, item, modifier=0):
+        # Modifier: 0=None, 1=Ctrl, 2=Shift (not impl)
+        # However, FileRow click event might come from checkbox toggle too.
+        # But if it comes from row click:
+        name = item['name']
+        
+        if modifier == 1: # Ctrl: toggle this one, keep others
+            if name in self.selected_items:
+                self.selected_items.remove(name)
+            else:
+                self.selected_items.add(name)
+        else: # Simple click: Select ONLY this one (unless it was a checkbox click?)
+            # Refine: If user clicks Checkbox, modifier is irrelevant, we just toggle.
+            # But the row widget click handler logic needs to be distinct. 
+            # Let's simplify: Click on row body -> Select Single. Ctrl+Click -> Toggle. 
+            # Click on Checkbox -> Toggle (handled by checkbox command).
             
-            # Display text with size if available
-            display_text = f"{icon}  {item['name']}"
-            if 'size' in item:
-                 display_text += f"   ({item['size']})"
+            # The FileRow calls on_click with modifier. 
+            # If modifier is 0, we clear others and select this one.
+            self.selected_items.clear()
+            self.selected_items.add(name)
 
-            btn = ctk.CTkButton(f, text=display_text, anchor="w", fg_color="transparent", 
-                                text_color=fg, hover_color="#444",
-                                command=lambda i=item: self.on_item_click(i))
-            btn.pack(fill="x")
-            self.item_widgets[item['name']] = btn
+        self._update_selection_visuals()
 
-        self.status_label.configure(text=f"Loaded {len(files)} items.")
-
-    def on_item_click(self, item):
-        # Deselect old
-        if self.selected_item and self.selected_item['name'] in self.item_widgets:
-             self.item_widgets[self.selected_item['name']].configure(fg_color="transparent")
-
-        self.selected_item = item
-        
-        # Highlight new
-        if item['name'] in self.item_widgets:
-             self.item_widgets[item['name']].configure(fg_color="#3A3A4A")
-
-        self.btn_delete.configure(state="normal")
-        self.btn_rename.configure(state="normal")
-        
+    def on_row_double_click(self, item):
         if item['type'] == 'dir':
-            self.btn_download.configure(text="Open Folder", state="normal", command=self.enter_selected_folder)
-        else:
-            self.btn_download.configure(text="Download File", state="normal", command=self.download_selected)
-    
-    def enter_selected_folder(self):
-        if self.selected_item and self.selected_item['type'] == 'dir':
-            self.current_path += self.selected_item['name'] + "/"
+            self.current_path += item['name'] + "/"
             self.refresh_files()
 
+    def on_row_right_click(self, event, item):
+        # Select this item if not selected, unless multiple are selected
+        if item['name'] not in self.selected_items:
+            self.selected_items.clear()
+            self.selected_items.add(item['name'])
+            self._update_selection_visuals()
+        
+        self.last_right_clicked_item = item
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+
+    def toggle_select_all(self):
+        state = self.chk_select_all.get()
+        self.selected_items.clear()
+        if state:
+            for item in self.file_items:
+                self.selected_items.add(item['name'])
+        
+        self._update_selection_visuals()
+
+    def _update_selection_visuals(self):
+        count = len(self.selected_items)
+        self.lbl_status.configure(text=f"{count} items selected.")
+        
+        for row in self.row_widgets:
+            is_sel = row.item['name'] in self.selected_items
+            row.set_selected(is_sel)
+        
+        # Update buttons state
+        state = "normal" if count > 0 else "disabled"
+        self.btn_download.configure(state=state)
+        self.btn_delete.configure(state=state)
+        self.btn_rename.configure(state="normal" if count == 1 else "disabled") # Rename only 1 at a time usually
+
+    # --- Actions ---
+
+    def create_folder(self):
+        dialog = ctk.CTkInputDialog(text="Folder Name:", title="New Folder")
+        name = dialog.get_input()
+        if name:
+            path = self.current_path + name
+            
+            def cb(success, msg):
+                self.after(0, lambda: self.lbl_status.configure(text=msg))
+                if success:
+                    self.after(500, self.refresh_files)
+            
+            self.adb_manager.create_directory(path, cb)
+
+    def delete_selected(self):
+        if not self.selected_items: return
+        
+        count = len(self.selected_items)
+        if not tkinter.messagebox.askyesno("Confirm Delete", f"Delete {count} items? This cannot be undone."):
+            return
+
+        # Prepare paths
+        paths = [self.current_path + name for name in self.selected_items]
+        
+        self.lbl_status.configure(text="Deleting...")
+
+        def _run():
+            # ADB `rm` can take multiple args? Yes usually.
+            # But simpler to just loop or join. `rm -rf path1 path2 ...` works.
+            # However adb shell argument limits exist.
+            # Safer to delete one by one or in chunks.
+            
+            for p in paths:
+                # We use internal blocking delete for now or enhance ADBManager to take list.
+                # Let's call ADBManager.delete_file for each (it spawns thread, so this spawns N threads... bad).
+                # Better: call adb command directly here or make ADBManager.delete_many.
+                # For now, let's just use ADBManager.run_command directly in this thread.
+                
+                cmd = ["-s", self.adb_manager.connected_device, "shell", "rm", "-rf", p]
+                self.adb_manager.run_command(cmd)
+            
+            self.after(0, self.refresh_files)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def rename_selected(self):
+        if len(self.selected_items) != 1: return
+        name = list(self.selected_items)[0]
+        
+        dialog = ctk.CTkInputDialog(text=f"Rename '{name}' to:", title="Rename")
+        new_name = dialog.get_input()
+        if new_name and new_name != name:
+             old_path = self.current_path + name
+             new_path = self.current_path + new_name
+             
+             self.adb_manager.rename_file(old_path, new_path, lambda s, m: (
+                 self.after(0, lambda: self.lbl_status.configure(text=m)),
+                 self.after(500, self.refresh_files)
+             ))
+
     def download_selected(self):
-        if not self.selected_item: return
+        if not self.selected_items: return
         
-        remote_file = self.current_path + self.selected_item['name']
+        # If multiple, ask for Folder. If single, ask for File (saveto).
+        count = len(self.selected_items)
         
-        # Ask where to save
-        local_path = tkinter.filedialog.asksaveasfilename(initialfile=self.selected_item['name'])
-        if not local_path: return
+        if count == 1:
+            item_name = list(self.selected_items)[0]
+            # Check if dir
+            is_dir = next((i['type'] == 'dir' for i in self.file_items if i['name'] == item_name), False)
+            
+            if is_dir:
+                 local_dir = tkinter.filedialog.askdirectory()
+                 if not local_dir: return
+                 remote = self.current_path + item_name
+                 # adb pull /sdcard/Folder C:/Local/
+                 # result: C:/Local/Folder
+                 self.adb_manager.pull_file(remote, local_dir, lambda s,m: self.lbl_status.configure(text=m))
+            else:
+                 local_path = tkinter.filedialog.asksaveasfilename(initialfile=item_name)
+                 if not local_path: return
+                 remote = self.current_path + item_name
+                 self.adb_manager.pull_file(remote, local_path, lambda s,m: self.lbl_status.configure(text=m))
+        else:
+            # Multiple
+            local_dir = tkinter.filedialog.askdirectory()
+            if not local_dir: return
+            
+            self.lbl_status.configure(text="Downloading multiple files...")
+            
+            def _run():
+                for name in self.selected_items:
+                    remote = self.current_path + name
+                    # adb pull remote local_dir
+                    self.adb_manager.run_command(["-s", self.adb_manager.connected_device, "pull", remote, local_dir])
+                
+                self.after(0, lambda: self.lbl_status.configure(text="Download complete."))
 
-        self.status_label.configure(text=f"Downloading {self.selected_item['name']}...")
-        
-        def cb(success, msg):
-             self.after(0, lambda: self.status_label.configure(text=msg))
-
-        self.adb_manager.pull_file(remote_file, local_path, cb)
+            threading.Thread(target=_run, daemon=True).start()
 
     def upload_file(self):
+        # We allow uploading multiple files
         files = tkinter.filedialog.askopenfilenames()
         if not files: return
         
-        self.status_label.configure(text="Starting upload...")
+        self.lbl_status.configure(text="Starting upload...")
         
-        def _upload_thread():
+        def _run():
             count = 0
-            total = len(files)
             for f in files:
                 fname = os.path.basename(f)
                 remote = self.current_path + fname
-                
-                # We use a blocking call to run_command for push to ensure sequential execution in this thread
-                # But ADBManager.push_file spawns a thread. We will use run_command directly here or
-                # just wait a bit. 
-                # Better: ADBManager.push_file is designed for single async calls.
-                # Let's direct call adb push here since we are already in a background thread.
-                
-                self.after(0, lambda n=fname: self.status_label.configure(text=f"Uploading {n}..."))
+                self.after(0, lambda n=fname: self.lbl_status.configure(text=f"Uploading {n}..."))
                 
                 cmd = ["-s", self.adb_manager.connected_device, "push", f, remote]
-                # We need to subprocess directly as we are in a thread and want to block THIS thread
-                import subprocess
-                try:
-                    subprocess.run(["adb"] + cmd, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW if subprocess.os.name == 'nt' else 0)
-                    count += 1
-                except Exception as e:
-                    print(f"Upload failed: {e}")
-
-            self.after(0, lambda: self.status_label.configure(text=f"Uploaded {count}/{total} files."))
+                subprocess.run(["adb"] + cmd, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW if subprocess.os.name == 'nt' else 0)
+                count += 1
+            
+            self.after(0, lambda: self.lbl_status.configure(text=f"Uploaded {count} files."))
             self.after(1000, self.refresh_files)
 
-        threading.Thread(target=_upload_thread, daemon=True).start()
+        threading.Thread(target=_run, daemon=True).start()
 
-    def delete_selected(self):
-        if not self.selected_item: return
+    def on_open_context(self):
+        # Trigger default action (enter folder or download)
+        if len(self.selected_items) == 1:
+            name = list(self.selected_items)[0]
+            # find item
+            item = next((i for i in self.file_items if i['name'] == name), None)
+            if item and item['type'] == 'dir':
+                self.on_row_double_click(item)
+            else:
+                self.download_selected()
+
+    def show_properties(self):
+        if not self.selected_items: return
+        msg = ""
+        for name in self.selected_items:
+            item = next((i for i in self.file_items if i['name'] == name), None)
+            if item:
+                msg += f"Name: {item['name']}\nType: {item['type']}\nSize: {item.get('size','?')}\nDate: {item.get('date','?')}\nPerms: {item.get('permissions','?')}\n\n"
         
-        # Check if item name is full path (from search) or relative (from list)
-        is_search_result = self.selected_item['name'].startswith('/')
-        path = self.selected_item['name'] if is_search_result else self.current_path + self.selected_item['name']
-        display_name = os.path.basename(path)
-
-        import tkinter.messagebox
-        if not tkinter.messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete {display_name}?"):
-            return
-
-        self.status_label.configure(text=f"Deleting {display_name}...")
-        
-        def cb(success, msg):
-             self.after(0, lambda: self.status_label.configure(text=msg))
-             self.after(500, self.refresh_files)
-
-        self.adb_manager.delete_file(path, cb)
-
-    def rename_selected(self):
-        if not self.selected_item: return
-        
-        is_search_result = self.selected_item['name'].startswith('/')
-        old_path = self.selected_item['name'] if is_search_result else self.current_path + self.selected_item['name']
-        old_name = os.path.basename(old_path)
-        parent_dir = os.path.dirname(old_path)
-
-        dialog = ctk.CTkInputDialog(text=f"Rename '{old_name}' to:", title="Rename")
-        new_name = dialog.get_input()
-        
-        if new_name and new_name != old_name:
-             new_path = os.path.join(parent_dir, new_name).replace("\\", "/")
-             
-             self.status_label.configure(text=f"Renaming to {new_name}...")
-             
-             def cb(success, msg):
-                  self.after(0, lambda: self.status_label.configure(text=msg))
-                  self.after(500, self.refresh_files)
-
-             self.adb_manager.rename_file(old_path, new_path, cb)
+        tkinter.messagebox.showinfo("Properties", msg)
 
     def toggle_search(self):
-        dialog = ctk.CTkInputDialog(text="Search file name in current folder tree:", title="Search")
+        dialog = ctk.CTkInputDialog(text="File name to search:", title="Recursive Search")
         query = dialog.get_input()
-        if query:
-            self.status_label.configure(text=f"Searching for '{query}'...")
-            
-            def _cb(results):
-                self.after(0, lambda: self.display_search_results(results))
-            
-            self.adb_manager.search_files(self.current_path, query, _cb)
-
-    def display_search_results(self, files):
-        # Special display for search results (absolute paths)
-        for w in self.list_frame.winfo_children():
-            w.destroy()
+        if not query: return
         
-        self.item_widgets = {}
-        self.selected_item = None
-        self.btn_download.configure(state="disabled")
-        self.btn_delete.configure(state="disabled")
-        self.btn_rename.configure(state="disabled")
-
-        if not files:
-            ctk.CTkLabel(self.list_frame, text="No matches found.").pack(pady=10)
-            self.status_label.configure(text="Ready.")
-            return
-
-        for item in files:
-            f = ctk.CTkFrame(self.list_frame, fg_color="transparent")
-            f.pack(fill="x", padx=2, pady=1)
-
-            btn = ctk.CTkButton(f, text=f"🔍 {item['name']}", anchor="w", fg_color="transparent", 
-                                hover_color="#444",
-                                command=lambda i=item: self.on_search_item_click(i))
-            btn.pack(fill="x")
-            self.item_widgets[item['name']] = btn
+        self.lbl_status.configure(text=f"Searching for '{query}'...")
+        # Search is robust in ADBManager but returns absolute paths.
+        # We should display them. The List can handle it if we adapt it.
+        # Ideally, we open a "Search Results" view or just replace the list content temporarily.
         
-        self.status_label.configure(text=f"Found {len(files)} matches.")
+        def cb(results):
+             self.after(0, lambda: self._show_search_results(results))
+        
+        self.adb_manager.search_files(self.current_path, query, cb)
 
-    def on_search_item_click(self, item):
-         # Search results are absolute paths.
-         self.selected_item = item # name is full path
-         if item['name'] in self.item_widgets:
-             for k, v in self.item_widgets.items(): v.configure(fg_color="transparent")
-             self.item_widgets[item['name']].configure(fg_color="#3A3A4A")
-
-         self.btn_download.configure(text="Download File", state="normal", command=self.download_search_result)
-         self.btn_delete.configure(state="normal")
-         self.btn_rename.configure(state="normal")
-    
-    def download_search_result(self):
-        if not self.selected_item: return
-        # Ensure we just get the filename for the local save dialog
-        local = tkinter.filedialog.asksaveasfilename(initialfile=os.path.basename(self.selected_item['name']))
-        if local:
-             self.adb_manager.pull_file(self.selected_item['name'], local, lambda s,m: self.after(0, lambda: self.status_label.configure(text=m)))
+    def _show_search_results(self, results):
+        self.lbl_status.configure(text=f"Found {len(results)} matches.")
+        
+        # Clear list
+        for w in self.row_widgets: w.destroy()
+        self.row_widgets = []
+        self.selected_items.clear()
+        
+        self.file_items = results # Replace current view model
+        # results have 'name' as full path.
+        
+        for item in results:
+             # Create row but display full name
+             row = FileRow(
+                self.list_frame, 
+                item, 
+                selected=False,
+                on_click=self.on_row_click,
+                on_right_click=self.on_row_right_click
+                # Double click on search result? -> Maybe go to that folder? 
+                # Or just download. Let's make it download or open folder.
+             )
+             row.pack(fill="x", pady=1)
+             self.row_widgets.append(row)

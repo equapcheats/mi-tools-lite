@@ -18,7 +18,7 @@ MIUI_ADS_AND_TRACKING = {
     "Content Push / Feeds": [
         ("com.miui.mipicks", "Mi Picks (App Store Suggestions)"),
         ("com.miui.yellowpage", "Yellow Pages (Caller ID/Spam)"),
-        ("com.miui.personalassistant", "App Vault / Minus-1 Screen"),
+        ("com.mi.globalminusscreen", "App Vault / Minus-1 Screen"),
         ("com.miui.contentextension", "Content Extensions")
     ],
     "Media / Tracking": [
