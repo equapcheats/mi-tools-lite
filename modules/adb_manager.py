@@ -321,6 +321,11 @@ class ADBManager:
                     size = "0"
                 
                 # Date/Time is usually 5, 6
+                try:
+                    date_str = f"{parts[5]} {parts[6]}"
+                except IndexError:
+                    date_str = ""
+
                 # Name starts at 7
                 name_start_index = 7
                 if len(parts) > name_start_index:
@@ -353,6 +358,8 @@ class ADBManager:
                     'name': name,
                     'type': file_type,
                     'size': size_str,
+                    'date': date_str,
+                    'permissions': parts[0],
                     'raw_line': line
                 })
         
@@ -423,4 +430,14 @@ class ADBManager:
                  callback(True, f"Renamed to {new_path}")
             else:
                  callback(False, f"Rename failed: {err}")
+        threading.Thread(target=_run, daemon=True).start()
+
+    def create_directory(self, path, callback):
+        def _run():
+            cmd = ["-s", self.connected_device, "shell", "mkdir", "-p", path]
+            out, err = self.run_command(cmd)
+            if not err:
+                callback(True, f"Created folder {path}")
+            else:
+                callback(False, f"Failed to create folder: {err}")
         threading.Thread(target=_run, daemon=True).start()
