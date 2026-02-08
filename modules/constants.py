@@ -37,6 +37,9 @@ MIUI_ADS_AND_TRACKING = {
         ("com.miui.weather2", "Mi Weather (Ads)"),
         ("com.miui.bugreport", "Bug Reporting Tool"),
         ("com.miui.userguide", "User Guide"),
-        ("com.miui.cleanmaster", "Cleaner App (Ads/Tracking)")
+        ("com.miui.cleanmaster", "Cleaner App (Ads/Tracking)"),
+        ("com.android.thememanager", "Mi Themes (Ads)"),
+        ("com.google.android.apps.bard", "Google Bard / Gemini (AI)"),
+        ("com.miui.videoplayer", "Mi Video Player (Junk)")
     ]
 }

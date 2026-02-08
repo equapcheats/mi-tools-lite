@@ -8,6 +8,7 @@ from modules.packages_tab import PackagesTab
 from modules.power_tab import PowerTab
 from modules.inspector_tab import InspectorTab
 from modules.task_manager_tab import TaskManagerTab
+from modules.file_transfer_tab import FileTransferTab
 from modules.adb_manager import ADBManager
 from modules.constants import MIUI_ADS_AND_TRACKING
 
@@ -44,7 +45,8 @@ class MiToolsLiteApp(ctk.CTk):
         # Tabs
         self.tab_connect = self.tab_view.add("Connection & Info")
         self.tab_debloat = self.tab_view.add("Debloater")
-        self.tab_task = self.tab_view.add("Task Manager") # New
+        self.tab_file_transfer = self.tab_view.add("File Transfer") # New
+        self.tab_task = self.tab_view.add("Task Manager") 
         self.tab_packages = self.tab_view.add("Package Manager")
         self.tab_power = self.tab_view.add("Power & Performance")
         self.tab_inspector = self.tab_view.add("Inspector")
@@ -55,6 +57,10 @@ class MiToolsLiteApp(ctk.CTk):
         # Initialize Debloater Tab
         self.debloater = DebloaterTab(self.tab_debloat, self.adb_manager, self.bloatware_list)
         self.debloater.pack(fill="both", expand=True)
+
+        # Initialize File Transfer Tab
+        self.file_transfer = FileTransferTab(self.tab_file_transfer, self.adb_manager)
+        self.file_transfer.pack(fill="both", expand=True)
 
         # Initialize Connection Tab
         self.connection = ConnectionTab(self.tab_connect, self.adb_manager, on_connect_callback=self.on_connected)
@@ -91,6 +97,7 @@ class MiToolsLiteApp(ctk.CTk):
     def on_connected(self):
         # Notify other tabs that connection is active
         self.debloater.on_device_connected()
+        self.file_transfer.on_device_connected()
         self.packages.status_label.configure(text="Connected. Refresh to load packages.")
         self.misc.status_label.configure(text="Connected.", text_color="#2CC985")
         self.reboot.status_label.configure(text="Connected.", text_color="#2CC985")
@@ -105,6 +112,22 @@ class MiToolsLiteApp(ctk.CTk):
         else:
             self.connection.stop_monitoring()
 
+        if current_tab == "Debloater" and self.adb_manager.connected_device:
+            self.debloater.check_uninstalled_status()
+
+    def on_close(self):
+        try:
+             # Stop any threads or monitoring if possible
+             self.connection.stop_monitoring()
+             
+             import subprocess
+             # Execute taskkill /f /im adb.exe
+             subprocess.run(["taskkill", "/f", "/im", "adb.exe"], creationflags=subprocess.CREATE_NO_WINDOW if subprocess.os.name == 'nt' else 0)
+        except:
+            pass
+        self.destroy()
+
 if __name__ == "__main__":
     app = MiToolsLiteApp()
+    app.protocol("WM_DELETE_WINDOW", app.on_close)
     app.mainloop()

@@ -288,3 +288,139 @@ class ADBManager:
         self.text_action(["pm", "uninstall"], pkg, callback, success_kw="Success")
 
 
+    # --- File Manager Methods ---
+
+    def list_files(self, path):
+        """Lists files in a directory. Returns list of dicts: {name, type, size, date}."""
+        if not self.connected_device: return []
+        
+        # Use ls -pl to get details and type indicator
+        # -p appends / to directories
+        # -l gives long format (permissions, owner, group, size, date, name)
+        # We try to parse this.
+        cmd = ["-s", self.connected_device, "shell", "ls", "-pl", path]
+        out, err = self.run_command(cmd)
+
+        entries = []
+        if out:
+            lines = out.splitlines()
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 7: continue # Skip total or malformed lines
+                
+                # permissions links owner group size date time name...
+                # drwxrwx--x 3 root sdcard_rw 4096 2023-01-01 12:00 Folder/
+                
+                # Check if it looks like a file line
+                if parts[0][0] not in '-dcb': continue
+                
+                # Size is usually at index 4 (0-based)
+                try:
+                    size = parts[4]
+                except IndexError:
+                    size = "0"
+                
+                # Date/Time is usually 5, 6
+                # Name starts at 7
+                name_start_index = 7
+                if len(parts) > name_start_index:
+                    name = " ".join(parts[name_start_index:])
+                else:
+                    continue # No name?
+
+                is_dir = name.endswith('/')
+                if is_dir:
+                    name = name[:-1]
+                    file_type = 'dir'
+                else:
+                    file_type = 'file'
+                
+                # Format size
+                try:
+                    size_bytes = int(size)
+                    if size_bytes > 1024*1024*1024:
+                        size_str = f"{size_bytes/(1024*1024*1024):.2f} GB"
+                    elif size_bytes > 1024*1024:
+                        size_str = f"{size_bytes/(1024*1024):.2f} MB"
+                    elif size_bytes > 1024:
+                        size_str = f"{size_bytes/1024:.2f} KB"
+                    else:
+                        size_str = f"{size_bytes} B"
+                except ValueError:
+                    size_str = size
+
+                entries.append({
+                    'name': name,
+                    'type': file_type,
+                    'size': size_str,
+                    'raw_line': line
+                })
+        
+        # Fallback if list is empty (parsing failed or empty dir)
+        # If parsing failed but dir not empty, we might want 'ls -1p' as fallback?
+        # For now, if empty, we assume empty or error.
+        
+        # Sort: Dirs first, then alphabetical
+        return sorted(entries, key=lambda x: (x['type'] != 'dir', x['name'].lower()))
+
+    def search_files(self, path, query, callback):
+        """Searches for files matching query in path."""
+        def _search():
+            cmd = ["-s", self.connected_device, "shell", "find", path, "-name", f"*{query}*"]
+            out, err = self.run_command(cmd)
+            results = []
+            if out:
+                for line in out.splitlines():
+                    clean_line = line.strip()
+                    if clean_line:
+                        results.append({'name': clean_line, 'type': 'file'}) # Assume file for consistency
+            
+            callback(results)
+        
+        threading.Thread(target=_search, daemon=True).start()
+
+    def pull_file(self, remote_path, local_path, callback):
+        def _run():
+            cmd = ["-s", self.connected_device, "pull", remote_path, local_path]
+            # remove NO_WINDOW flag for pull to potentially show progress? No, subprocess captures it.
+            # ADB prints progress to stderr usually. 
+            process = subprocess.run(["adb"] + cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW if subprocess.os.name == 'nt' else 0)
+            
+            if process.returncode == 0:
+                callback(True, f"Pulled {remote_path} to {local_path}")
+            else:
+                callback(False, f"Failed: {process.stderr}")
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def push_file(self, local_path, remote_path, callback):
+        def _run():
+            cmd = ["-s", self.connected_device, "push", local_path, remote_path]
+            process = subprocess.run(["adb"] + cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW if subprocess.os.name == 'nt' else 0)
+            
+            if process.returncode == 0:
+                callback(True, f"Pushed {local_path} to {remote_path}")
+            else:
+                callback(False, f"Failed: {process.stderr}")
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def delete_file(self, path, callback):
+        def _run():
+            cmd = ["-s", self.connected_device, "shell", "rm", "-rf", path]
+            out, err = self.run_command(cmd)
+            if not err:
+                callback(True, f"Deleted {path}")
+            else:
+                callback(False, f"Delete failed: {err}")
+        threading.Thread(target=_run, daemon=True).start()
+
+    def rename_file(self, old_path, new_path, callback):
+        def _run():
+            cmd = ["-s", self.connected_device, "shell", "mv", old_path, new_path]
+            out, err = self.run_command(cmd)
+            if not err:
+                 callback(True, f"Renamed to {new_path}")
+            else:
+                 callback(False, f"Rename failed: {err}")
+        threading.Thread(target=_run, daemon=True).start()

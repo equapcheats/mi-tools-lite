@@ -62,6 +62,32 @@ class DebloaterTab(ctk.CTkFrame):
         self.status_label.configure(text="Ready.")
         self.btn_uninstall.configure(state="normal")
         self.btn_reinstall.configure(state="normal")
+        self.check_uninstalled_status()
+
+    def check_uninstalled_status(self):
+        self.status_label.configure(text="Checking installed status...")
+        import threading
+        threading.Thread(target=self._check_status_thread, daemon=True).start()
+
+    def _check_status_thread(self):
+        # Fetch uninstalled system packages
+        uninstalled = self.adb_manager.get_packages("uninstalled")
+        
+        matched_count = 0
+        for pkg, var in self.check_vars.items():
+            # Check packages and variants
+            variants = self.adb_manager._get_variants(pkg)
+            is_uninstalled = False
+            for v in variants:
+                if v in uninstalled:
+                    is_uninstalled = True
+                    break
+            
+            if is_uninstalled:
+                self.after(0, lambda v=var: v.set(True))
+                matched_count += 1
+        
+        self.after(0, lambda: self.status_label.configure(text=f"Ready. Found {matched_count} uninstalled apps."))
 
 
 
@@ -115,6 +141,8 @@ class DebloaterTab(ctk.CTkFrame):
             self.status_label.configure(text=f"Finished: {self.work_success}/{self.work_total} processed.")
             self.btn_uninstall.configure(state="normal")
             self.btn_reinstall.configure(state="normal")
+            # Auto-refresh status to reflect changes
+            self.check_uninstalled_status()
             return
 
         pkg = self.work_queue.pop(0)
