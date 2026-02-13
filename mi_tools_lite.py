@@ -9,6 +9,7 @@ from modules.power_tab import PowerTab
 from modules.inspector_tab import InspectorTab
 from modules.task_manager_tab import TaskManagerTab
 from modules.file_transfer_tab import FileTransferTab
+from modules.screenshot_tab import ScreenshotTab
 from modules.adb_manager import ADBManager
 from modules.constants import MIUI_ADS_AND_TRACKING
 
@@ -90,6 +91,7 @@ class MiToolsLiteApp(ctk.CTk):
         self.tab_inspector = ctk.CTkFrame(self.page_container, fg_color="transparent")
         self.tab_misc = ctk.CTkFrame(self.page_container, fg_color="transparent")
         self.tab_reboot = ctk.CTkFrame(self.page_container, fg_color="transparent")
+        self.tab_screenshot = ctk.CTkFrame(self.page_container, fg_color="transparent")
         self.tab_other = ctk.CTkFrame(self.page_container, fg_color="transparent")
 
         for frame in [
@@ -102,6 +104,7 @@ class MiToolsLiteApp(ctk.CTk):
             self.tab_inspector,
             self.tab_misc,
             self.tab_reboot,
+            self.tab_screenshot,
             self.tab_other,
         ]:
             frame.grid(row=0, column=0, sticky="nsew")
@@ -142,6 +145,10 @@ class MiToolsLiteApp(ctk.CTk):
         self.reboot = RebootTab(self.tab_reboot, self.adb_manager)
         self.reboot.pack(fill="both", expand=True)
 
+        # Initialize Screenshot Tab
+        self.screenshot = ScreenshotTab(self.tab_screenshot, self.adb_manager)
+        self.screenshot.pack(fill="both", expand=True)
+
         # Other
         self.label_other = ctk.CTkLabel(self.tab_other, text="More features coming soon...", font=("Roboto", 16), text_color=TEXT_MUTED)
         self.label_other.pack(pady=40)
@@ -156,6 +163,7 @@ class MiToolsLiteApp(ctk.CTk):
             ("packages", "Package Manager", "📦"),
             ("power", "Power & Performance", "⚡"),
             ("inspector", "Inspector", "🔍"),
+            ("screenshot", "Screenshot", "📸"),
             ("tweaks", "Tweaks", "🛠"),
             ("reboot", "Reboot", "🔄"),
             ("other", "Other", "✨"),
@@ -183,6 +191,7 @@ class MiToolsLiteApp(ctk.CTk):
             "packages": self.tab_packages,
             "power": self.tab_power,
             "inspector": self.tab_inspector,
+            "screenshot": self.tab_screenshot,
             "tweaks": self.tab_misc,
             "reboot": self.tab_reboot,
             "other": self.tab_other,
@@ -201,6 +210,7 @@ class MiToolsLiteApp(ctk.CTk):
         self.power.status_label.configure(text="Connected.", text_color="#2CC985")
         self.power.check_low_power() # Auto check status
         self.task_manager.status_label.configure(text="Connected. Load processes to start.")
+        self.screenshot.on_device_connected()
         self.header_status.configure(text="Connected", text_color=TEXT_OK)
 
     def show_tab(self, tab_key):
