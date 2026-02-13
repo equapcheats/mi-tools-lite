@@ -441,3 +441,71 @@ class ADBManager:
             else:
                 callback(False, f"Failed to create folder: {err}")
         threading.Thread(target=_run, daemon=True).start()
+
+    def take_screenshot(self, save_path, callback):
+        """Captures device screenshot and saves to PC."""
+        if not self.connected_device:
+            if callback: callback(False, "No device connected.", None)
+            return
+
+        def _capture():
+            try:
+                # Capture screenshot to device temp location
+                device_path = "/sdcard/screenshot_tmp.png"
+                
+                # Take screenshot on device
+                out, err = self.run_command(["-s", self.connected_device, "shell", "screencap", "-p", device_path])
+                
+                if err and "Permission denied" in err:
+                    if callback: callback(False, "Permission denied. Enable USB debugging.", None)
+                    return
+                
+                # Pull screenshot from device to PC
+                out, err = self.run_command(["-s", self.connected_device, "pull", device_path, save_path])
+                
+                if err or "no such file" in err.lower():
+                    if callback: callback(False, f"Failed to capture screenshot: {err}", None)
+                    return
+                
+                # Clean up device temp file
+                self.run_command(["-s", self.connected_device, "shell", "rm", device_path])
+                
+                if callback: callback(True, f"Screenshot saved to {save_path}", save_path)
+            except Exception as e:
+                if callback: callback(False, f"Error: {str(e)}", None)
+        
+        threading.Thread(target=_capture, daemon=True).start()
+
+    def take_screenshot_sync(self):
+        """Synchronous screenshot capture for quick access."""
+        if not self.connected_device:
+            return None, "No device connected."
+        
+        try:
+            import os
+            import tempfile
+            
+            # Create temp directory for screenshot
+            temp_dir = tempfile.gettempdir()
+            save_path = os.path.join(temp_dir, "mi_tools_screenshot.png")
+            
+            device_path = "/sdcard/screenshot_tmp.png"
+            
+            # Take screenshot
+            out, err = self.run_command(["-s", self.connected_device, "shell", "screencap", "-p", device_path])
+            
+            if err and "Permission denied" in err:
+                return None, "Permission denied. Enable USB debugging."
+            
+            # Pull screenshot
+            out, err = self.run_command(["-s", self.connected_device, "pull", device_path, save_path])
+            
+            if err or "no such file" in err.lower():
+                return None, f"Failed to capture: {err}"
+            
+            # Cleanup
+            self.run_command(["-s", self.connected_device, "shell", "rm", device_path])
+            
+            return save_path, "Success"
+        except Exception as e:
+            return None, str(e)
